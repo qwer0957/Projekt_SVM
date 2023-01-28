@@ -1,0 +1,193 @@
+# import libraries
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+
+def svmPredict(Xtr, Ytr, Xte, reg_parm=0.1, epochs=100000):
+    n_train, d_train = np.shape(Xtr)
+
+
+    w = np.zeros(d_train)
+
+    for epoch in range(1, epochs):
+        learning_rate = 1 / epoch
+        for i, x in enumerate(Xtr):
+            if (Ytr[i] * np.dot(Xtr[i], w)) < 1:
+                w = (1 - learning_rate) * w + (learning_rate) * reg_parm * Ytr[i] * Xtr[i]
+            else:
+                w = (1 - learning_rate) * w
+
+    Ypred = np.dot(Xte, w)
+
+    return Ypred, w
+
+
+def linearBinaryClass(n, low_D, high_D, m, q):
+    X = np.zeros((n, 2))
+    Y = np.zeros(n)
+    for i in range(2):
+        X[:, i] = np.random.uniform(low_D, high_D, size=n)
+
+    Y[X[:, 1] - (X[:, 0] * m + q) > 0] = 1
+    Y[X[:, 1] - (X[:, 0] * m + q) < 0] = -1
+
+    return X, Y
+
+def flipLabels(Y, P):
+    if P < 1 or P > 100:
+        print("p should be a percentage value between 0 and 100.")
+        return -1
+
+    if any(np.abs(Y) != 1):
+        print("The values of Ytr should be +1 or -1.")
+        return -1
+
+    Y_noisy = np.copy(np.squeeze(Y))
+    if Y_noisy.ndim > 1:
+        print("Please supply a label array with only one dimension")
+        return -1
+
+    n = Y_noisy.size
+    n_flips = int(np.floor(n * P / 100))
+    idx_to_flip = np.random.choice(n, size=n_flips, replace=False)
+    Y_noisy[idx_to_flip] = -Y_noisy[idx_to_flip]
+
+    return Y_noisy
+
+def calcErrorSVM(Ypred, Ytrue):
+    cnt = 0
+    for i in range(len(Ytrue)):
+        if Ypred[i]*Ytrue[i] <1 :
+            cnt +=1
+    return cnt/len(Ytrue)
+
+def svmTrainTestAnalysis(Xtr, Ytr, Xte, Yte, reg_params):
+    train_err = np.zeros(np.shape(reg_params))
+    test_err = np.zeros(np.shape(reg_params))
+
+    for i in range(len(reg_params)):
+        Ypredt, w_train = svmPredict(Xtr, Ytr, Xtr, reg_params[i])
+        train_err[i] = calcErrorSVM(Ypredt, Ytr)
+
+        Ypredtr, w_pred = svmPredict(Xtr, Ytr, Xte, reg_params[i])
+        test_err[i] = calcErrorSVM(Ypredtr, Yte)
+
+    return train_err, test_err
+
+def kFoldCrossValidationSVM(X, Y, num_of_folds, reg_param_list):
+    if num_of_folds <= 0 and num_of_folds >= 100 and isinstance(num_of_folds, int):
+        print("select an integer in between 1 and 100")
+        return -1
+
+    size_of_input = X.shape[0]
+    size_of_validation = int(np.ceil(size_of_input / num_of_folds))
+
+    num_reg_param = len(reg_param_list)
+    reg_param_list = np.array(reg_param_list)
+
+    T_mean, T_sd, V_mean, V_sd = np.zeros(num_reg_param), \
+                                 np.zeros(num_reg_param), \
+                                 np.zeros(num_reg_param), \
+                                 np.zeros(num_reg_param)
+
+    random_index = np.random.choice(size_of_input, size=size_of_input, replace=False)
+
+    for reg_index, reg_param in enumerate(reg_param_list):
+        first = 0
+        for fold in range(num_of_folds):
+            flags = np.zeros(size_of_input)
+            flags[first:first + size_of_validation] = 1
+
+            X_training, Y_training = X[flags == 0], Y[flags == 0]
+            X_validation, Y_validation = X[flags == 1], Y[flags == 1]
+
+            # training Error calculation
+            Y_train_predict, w = svmPredict(X_training, Y_training, X_training, reg_param)
+            training_error = calcErrorSVM(Y_train_predict, Y_training)
+
+            T_mean[reg_index] += training_error
+            T_sd[reg_index] += training_error ** 2
+
+            # validation errorcalculation
+            Y_validation_predict, w = svmPredict(X_training, Y_training, X_validation, reg_param)
+            validation_error = calcErrorSVM(Y_validation_predict, Y_validation)
+
+            V_mean[reg_index] += validation_error
+            V_sd[reg_index] += validation_error ** 2
+
+            first += size_of_validation
+
+    T_mean = T_mean / num_of_folds
+    T_sd = T_sd / num_of_folds - T_mean ** 2
+
+    V_mean = V_mean / num_of_folds
+    V_sd = V_sd - V_mean ** 2
+
+    best_reg_param_index = np.argmin(V_mean)
+    best_reg_param = reg_param_list[best_reg_param_index]
+
+    return best_reg_param, T_mean, T_sd, V_mean, V_sd
+
+
+
+X, Y = linearBinaryClass(200, 0, 20, 0.8, 0)
+Y = flipLabels(Y, 5)
+
+
+training_percentage = 70
+size_of_input_data = X.shape[0]
+
+Xtr = X[0 : (int(size_of_input_data*training_percentage/100)), :]
+Ytr = Y[0: (int(size_of_input_data*training_percentage/100))]
+Xte = X[(int(size_of_input_data*training_percentage/100)) : , :]
+Yte = Y[(int(size_of_input_data*training_percentage/100)) : ]
+
+reg_param = 40
+Y_pred, w = svmPredict(Xtr, Ytr, Xte, reg_param)
+
+
+plt.scatter(np.array(X[:,0]), np.array(X[:,1]),marker='*',c=Y)
+
+
+a = -w[0] / w[1]
+xx = np.linspace(0,20)
+yy = a * xx
+
+
+plt.plot(xx, yy, color='red')
+
+plt.plot(xx, (yy+1), linestyle='--', color='blue')
+plt.plot(xx, (yy-1), linestyle='--', color='blue')
+
+plt.show();
+
+import timeit
+
+reg_params = [0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000]
+train_errors = np.zeros(len(reg_params))
+validation_errors = np.zeros(len(reg_params))
+
+start_time = timeit.default_timer()
+
+train_errors, validation_errors = svmTrainTestAnalysis(Xtr, Ytr, Xte, Yte, reg_params)
+
+end_time = timeit.default_timer()
+
+print('Time taken to complete process:', end_time - start_time)
+
+
+print(train_errors)
+
+
+plt.plot(np.log10(np.array(reg_params)), np.array(train_errors), label='Training Error')
+plt.plot(np.log10(np.array(reg_params)), np.array(validation_errors), label='Validation Error')
+plt.xlabel('Regularization Parameters (log scale)', color='#1C2833')
+plt.ylabel('Errors', color='#1C2833')
+plt.legend(loc='upper right')
+plt.grid()
+plt.show()
+
+print(validation_errors)
